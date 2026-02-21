@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<!--
+  FILE: templates/index.html
+  ROLE: The main web page served by Flask.
+
+  Flask uses the Jinja2 templating engine.
+  Variables passed from app.py via render_template() are
+  available here using {{ variable }} syntax.
+
+  For example, {{ config.ROWS }} inserts the Python CONFIG['ROWS'] value.
+
+  WHAT THIS PAGE DOES:
+  - Renders the grid as an HTML5 <canvas>
+  - Lets user place Start (S), End (E), walls, and traffic
+  - Sends grid config to Python Flask via fetch() POST request
+  - Receives A* results (path + visited nodes) as JSON
+  - Animates the result step-by-step on the canvas
+-->
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>OptiRoute — A* Pathfinding Visualizer</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}" />
+  <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;700;800;900&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet" />
+</head>
+<body>
+
+<!-- ═══════════════════════════════════════════════════════════
+     HEADER
+     ═══════════════════════════════════════════════════════════ -->
+<header class="app-header">
+  <div class="brand">
+    <span class="brand-icon">🔷</span>
+    <div>
+      <div class="brand-name">OptiRoute</div>
+      <div class="brand-sub">Optimal Path Finding — A* Algorithm</div>
+    </div>
+  </div>
+  <div class="header-stats">
+    <div class="hstat"><span class="hstat-val" id="h-nodes">—</span><span class="hstat-label">Nodes Visited</span></div>
+    <div class="hstat"><span class="hstat-val" id="h-path">—</span><span class="hstat-label">Path Length</span></div>
+    <div class="hstat"><span class="hstat-val" id="h-cost">—</span><span class="hstat-label">Path Cost</span></div>
+    <div class="hstat"><span class="hstat-val" id="h-time">—</span><span class="hstat-label">Time (ms)</span></div>
+  </div>
+</header>
+
+<!-- ═══════════════════════════════════════════════════════════
+     MAIN LAYOUT — 3 columns: controls | canvas | info
+     ═══════════════════════════════════════════════════════════ -->
+<div class="app-body">
+
+  <!-- ── LEFT PANEL ────────────────────────────────────────── -->
+  <aside class="left-panel">
+
+    <!-- Draw Mode -->
+    <div class="panel-section">
+      <div class="panel-label">Draw Mode</div>
+      <div class="mode-grid">
+        <button class="mode-btn active" id="mode-start"  onclick="setMode('start')">🚀<br>START</button>
+        <button class="mode-btn"        id="mode-end"    onclick="setMode('end')">🎯<br>END</button>
+        <button class="mode-btn"        id="mode-wall"   onclick="setMode('wall')">🧱<br>WALL</button>
+        <button class="mode-btn"        id="mode-traffic"onclick="setMode('traffic')">🚦<br>TRAFFIC</button>
+        <button class="mode-btn"        id="mode-erase"  onclick="setMode('erase')">🧹<br>ERASE</button>
+      </div>
+    </div>
+
+    <!-- Heuristic -->
+    <div class="panel-section">
+      <div class="panel-label">Heuristic h(n)</div>
+      <select class="select-input" id="heuristic-select">
+        <option value="manhattan">Manhattan — |Δr|+|Δc|</option>
+        <option value="euclidean">Euclidean — √(Δr²+Δc²)</option>
+        <option value="chebyshev">Chebyshev — max(|Δr|,|Δc|)</option>
+      </select>
+    </div>
+
+    <!-- Speed -->
+    <div class="panel-section">
+      <div class="panel-label">Animation Speed</div>
+      <div class="speed-row">
+        <span>🐢</span>
+        <input type="range" min="0" max="100" value="70" id="speed-slider" />
+        <span>🚀</span>
+      </div>
+      <div class="speed-label" id="speed-label">18ms delay</div>
+    </div>
+
+    <!-- Controls -->
+    <div class="panel-section">
+      <div class="panel-label">Controls</div>
+      <button class="ctrl-btn btn-primary" id="btn-run" onclick="runVisualization()">▶  Run A*</button>
+      <button class="ctrl-btn btn-secondary" onclick="clearPath()">↺  Clear Path</button>
+      <button class="ctrl-btn btn-danger"    onclick="resetGrid()">✕  Reset Grid</button>
+    </div>
+
+    <!-- Maze Presets -->
+    <div class="panel-section">
+      <div class="panel-label">Generate Maze</div>
+      <button class="preset-btn" onclick="generateMaze('random')">🎲  Random Walls</button>
+      <button class="preset-btn" onclick="generateMaze('recursive')">🌀  Recursive Maze</button>
+      <button class="preset-btn" onclick="generateMaze('sparse')">🚦  Traffic Heavy</button>
+    </div>
+
+    <!-- Legend -->
+    <div class="panel-section">
+      <div class="panel-label">Legend</div>
+      <div class="legend">
+        <div class="legend-item"><div class="swatch sw-start"></div>Start Node</div>
+        <div class="legend-item"><div class="swatch sw-end"></div>End Node</div>
+        <div class="legend-item"><div class="swatch sw-wall"></div>Wall / Building</div>
+        <div class="legend-item"><div class="swatch sw-visited"></div>Visited Node</div>
+        <div class="legend-item"><div class="swatch sw-open"></div>Open Set</div>
+        <div class="legend-item"><div class="swatch sw-path"></div>Optimal Path</div>
+        <div class="legend-item"><div class="swatch sw-traffic"></div>Traffic (4x cost)</div>
+      </div>
+    </div>
+
+  </aside>
+
+  <!-- ── CANVAS MAP ─────────────────────────────────────────── -->
+  <main class="map-wrap">
+    <!--
+      The grid is drawn on this canvas.
+      Dimensions are set by JavaScript based on CONFIG values
+      passed from Flask: {{ config.ROWS }} and {{ config.COLS }}
+    -->
+    <canvas id="grid-canvas"></canvas>
+    <div class="status-bar" id="status-bar">
+      Click to place START, then END — then press Run A*
+    </div>
+  </main>
+
+  <!-- ── RIGHT PANEL ───────────────────────────────────────── -->
+  <aside class="right-panel">
+
+    <!-- A* Formula -->
+    <div class="panel-section">
+      <div class="panel-label">A* Formula</div>
+      <div class="formula-box">
+        <div class="formula-main">f(n) = g(n) + h(n)</div>
+        <div class="formula-row"><span class="fkey">g(n)</span><span>Cost from start → n</span></div>
+        <div class="formula-row"><span class="fkey">h(n)</span><span>Heuristic: n → goal</span></div>
+        <div class="formula-row"><span class="fkey">f(n)</span><span>Total estimated cost</span></div>
+      </div>
+    </div>
+
+    <!-- Live Node Data -->
+    <div class="panel-section">
+      <div class="panel-label">Current Node</div>
+      <div class="node-box">
+        <div class="node-row"><span>Position</span><span class="nval" id="n-pos">—</span></div>
+        <div class="node-row"><span>g(n)</span><span class="nval" id="n-g">—</span></div>
+        <div class="node-row"><span>h(n)</span><span class="nval" id="n-h">—</span></div>
+        <div class="node-row"><span>f(n)</span><span class="nval" id="n-f">—</span></div>
+        <div class="node-row"><span>Open Set</span><span class="nval" id="n-open">—</span></div>
+      </div>
+    </div>
+
+    <!-- Python Backend Info -->
+    <div class="panel-section">
+      <div class="panel-label">Backend (Python)</div>
+      <div class="backend-box">
+        <div class="be-row">
+          <span class="be-icon">🐍</span>
+          <span>Flask {{ config.get('FLASK_VERSION', '3.x') }}</span>
+        </div>
+        <div class="be-row">
+          <span class="be-icon">🧮</span>
+          <span>heapq Min-Heap</span>
+        </div>
+        <div class="be-row">
+          <span class="be-icon">📐</span>
+          <span>Grid: {{ config.ROWS }} × {{ config.COLS }}</span>
+        </div>
+        <div class="be-row">
+          <span class="be-icon">🔢</span>
+          <span>{{ config.ROWS * config.COLS }} total nodes</span>
+        </div>
+        <div class="be-row">
+          <span class="be-icon">⚡</span>
+          <span>O(E log V) complexity</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Python Log -->
+    <div class="panel-section" style="flex:1">
+      <div class="panel-label">Response Log</div>
+      <div class="log-box" id="log-box">
+        <div class="log-line info">[INFO] OptiRoute Python server ready</div>
+        <div class="log-line info">[INFO] Grid: {{ config.ROWS }}×{{ config.COLS }} = {{ config.ROWS * config.COLS }} nodes</div>
+        <div class="log-line ok"  >[READY] Place start and end, then Run A*</div>
+      </div>
+    </div>
+
+  </aside>
+</div>
+
+<!--
+  Pass Python CONFIG values to JavaScript.
+  Jinja2 renders {{ config.ROWS }} as the actual number before sending to browser.
+  This is how Flask "talks to" the JavaScript.
+-->
+<script>
+  // These values come from Python's CONFIG dict via Flask render_template()
+  const ROWS       = {{ config.ROWS }};
+  const COLS       = {{ config.COLS }};
+  const DEF_START  = {{ config.DEFAULT_START }};
+  const DEF_END    = {{ config.DEFAULT_END }};
+  const ANIM_DELAY = {{ config.ANIM_DELAY_MS }};
+</script>
+
+<!-- Load our JavaScript files -->
+<script src="{{ url_for('static', filename='js/renderer.js') }}"></script>
+<script src="{{ url_for('static', filename='js/app.js') }}"></script>
+
+</body>
+</html>

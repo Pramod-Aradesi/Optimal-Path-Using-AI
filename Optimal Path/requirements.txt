@@ -1,0 +1,18 @@
+# =============================================================================
+#  FILE: requirements.txt
+#  ROLE: Lists all Python packages needed to run OptiRoute.
+#
+#  HOW TO INSTALL:
+#    pip install -r requirements.txt
+#
+#  PACKAGES EXPLAINED:
+# =============================================================================
+
+# Flask — The web framework.
+# Handles HTTP routing, HTML template rendering, and JSON responses.
+# When you run `python app.py`, Flask starts a local web server.
+flask>=3.0.0
+
+# Werkzeug — Flask's underlying utility library.
+# Handles request/response objects. Flask installs this automatically.
+werkzeug>=3.0.0
