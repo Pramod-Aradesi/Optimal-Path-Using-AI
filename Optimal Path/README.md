@@ -1,4 +1,4 @@
-# 🔷 OptiRoute — A* Pathfinding Visualizer (Python + Flask)
+# Optimal Path Finding — A* Pathfinding Visualizer (Python + Flask)
 
 Real-time A* algorithm visualization in the browser, powered by a Python Flask backend.
 
